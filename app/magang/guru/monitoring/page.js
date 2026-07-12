@@ -27,17 +27,35 @@ export default function MonitoringPage() {
   const [keterangan, setKeterangan] = useState("");
 
   const [photo, setPhoto] = useState("");
+  const [photoSuccess, setPhotoSuccess] = useState(false);
 
   const [cameraReady, setCameraReady] = useState(false);
 
   const [latitude, setLatitude] = useState("-");
   const [longitude, setLongitude] = useState("-");
   const [accuracy, setAccuracy] = useState("-");
+  const [gpsSuccess, setGpsSuccess] = useState(false);
 
   const [gpsLoading, setGpsLoading] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const watermarkCanvasRef = useRef(null);
+
+  // FUNGSI BACK DENGAN STOP KAMERA
+  function handleBack() {
+
+    if (videoRef.current?.srcObject) {
+
+      videoRef.current.srcObject
+        .getTracks()
+        .forEach(track => track.stop());
+
+    }
+
+    router.replace("/magang/guru");
+
+  }
 
   // FUNGSI KAMERA
   async function startCamera() {
@@ -86,6 +104,86 @@ export default function MonitoringPage() {
 
   }
 
+  // FUNGSI TAMBAH WATERMARK
+  function addWatermark(imageData) {
+
+    return new Promise((resolve) => {
+
+      const img = new Image();
+
+      img.onload = () => {
+
+        const canvas = watermarkCanvasRef.current;
+
+        if (!canvas) return resolve(imageData);
+
+        canvas.width = img.width;
+
+        canvas.height = img.height;
+
+        const ctx = canvas.getContext("2d");
+
+        // Gambar foto asli
+        ctx.drawImage(img, 0, 0);
+
+        // Setup watermark
+        const now = new Date();
+
+        const hari = now.toLocaleDateString("id-ID", { weekday: "long" });
+
+        const tanggal = now.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+
+        const jam = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+
+        const watermarkText = [
+
+          `Guru: ${user.nama}`,
+
+          `Hari: ${hari}`,
+
+          `Tanggal: ${tanggal}`,
+
+          `Jam: ${jam}`,
+
+          `Lat: ${latitude}, Lon: ${longitude}`,
+
+        ].join("\n");
+
+        // Gambar background watermark
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+
+        ctx.fillRect(10, img.height - 140, 300, 130);
+
+        // Gambar text
+        ctx.fillStyle = "#FFFFFF";
+
+        ctx.font = "14px Arial";
+
+        ctx.lineHeight = 20;
+
+        let y = img.height - 120;
+
+        watermarkText.split("\n").forEach((line) => {
+
+          ctx.fillText(line, 20, y);
+
+          y += 20;
+
+        });
+
+        // Convert ke Base64
+        const watermarkedImage = canvas.toDataURL("image/jpeg", 0.9);
+
+        resolve(watermarkedImage);
+
+      };
+
+      img.src = imageData;
+
+    });
+
+  }
+
   // FUNGSI AMBIL FOTO
   async function capturePhoto() {
 
@@ -93,11 +191,17 @@ export default function MonitoringPage() {
 
       setPhoto("");
 
+      setPhotoSuccess(false);
+
       setLatitude("-");
 
       setLongitude("-");
 
       setAccuracy("-");
+
+      setGpsSuccess(false);
+
+      setCameraReady(false);
 
       await startCamera();
 
@@ -131,6 +235,8 @@ export default function MonitoringPage() {
 
     setPhoto(image);
 
+    setPhotoSuccess(true);
+
     const tracks = video.srcObject?.getTracks();
 
     tracks?.forEach(track => track.stop());
@@ -163,6 +269,8 @@ export default function MonitoringPage() {
         setLongitude(pos.coords.longitude);
 
         setAccuracy(Math.round(pos.coords.accuracy) + " meter");
+
+        setGpsSuccess(true);
 
         setGpsLoading(false);
 
@@ -212,9 +320,12 @@ export default function MonitoringPage() {
 
       setSaving(true);
 
+      // Tambahkan watermark ke foto
+      const photoWithWatermark = await addWatermark(photo);
+
       // Upload foto ke Google Drive
       const upload = await uploadPhoto(
-        photo,
+        photoWithWatermark,
         "MONITORING_" +
         Date.now() +
         ".jpg"
@@ -258,6 +369,21 @@ export default function MonitoringPage() {
       if (result.success) {
 
         alert("Monitoring berhasil disimpan.");
+
+        // Reset state
+        setPhoto("");
+
+        setPhotoSuccess(false);
+
+        setKeterangan("");
+
+        setLatitude("-");
+
+        setLongitude("-");
+
+        setAccuracy("-");
+
+        setGpsSuccess(false);
 
         router.replace("/magang/guru");
 
@@ -352,6 +478,15 @@ export default function MonitoringPage() {
     );
   }
 
+  // GET CURRENT DATE/TIME
+  const now = new Date();
+
+  const hari = now.toLocaleDateString("id-ID", { weekday: "long" });
+
+  const tanggal = now.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+
+  const jam = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false });
+
   return (
 
     <main className="min-h-screen bg-slate-100 pb-10">
@@ -385,7 +520,7 @@ export default function MonitoringPage() {
           </div>
 
           <button
-            onClick={() => router.back()}
+            onClick={handleBack}
             className="rounded-xl bg-blue-700 px-5 py-2 font-bold text-white hover:bg-blue-800"
           >
 
@@ -414,7 +549,7 @@ export default function MonitoringPage() {
 
           </h2>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2">
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
 
             <Info
               label="ID GURU"
@@ -425,6 +560,46 @@ export default function MonitoringPage() {
               label="NAMA GURU"
               value={user.nama}
             />
+
+            <div className="rounded-xl bg-white/10 p-4">
+
+              <p className="text-xs uppercase tracking-wider text-blue-200">
+                Hari
+              </p>
+
+              <p className="mt-1 text-lg font-bold text-white capitalize">
+                {hari}
+              </p>
+
+            </div>
+
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+
+            <div className="rounded-xl bg-white/10 p-4">
+
+              <p className="text-xs uppercase tracking-wider text-blue-200">
+                Tanggal
+              </p>
+
+              <p className="mt-1 text-lg font-bold text-white">
+                {tanggal}
+              </p>
+
+            </div>
+
+            <div className="rounded-xl bg-white/10 p-4">
+
+              <p className="text-xs uppercase tracking-wider text-blue-200">
+                Jam
+              </p>
+
+              <p className="mt-1 text-lg font-bold text-white">
+                {jam} WIB
+              </p>
+
+            </div>
 
           </div>
 
@@ -457,7 +632,7 @@ export default function MonitoringPage() {
 
                     muted
 
-                    className="h-80 w-full rounded-3xl bg-black object-cover"
+                    className="w-full h-80 object-cover rounded-3xl bg-black"
 
                   />
 
@@ -473,7 +648,7 @@ export default function MonitoringPage() {
 
                     alt="Monitoring"
 
-                    className="h-80 w-full rounded-3xl object-cover"
+                    className="w-full h-80 object-cover rounded-3xl"
 
                   />
 
@@ -486,7 +661,26 @@ export default function MonitoringPage() {
               className="hidden"
             />
 
+            <canvas
+              ref={watermarkCanvasRef}
+              className="hidden"
+            />
+
           </div>
+
+          {photoSuccess && (
+
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+
+              <p className="text-emerald-700 font-bold">
+
+                ✓ Foto berhasil diambil
+
+              </p>
+
+            </div>
+
+          )}
 
           <button
 
@@ -502,13 +696,15 @@ export default function MonitoringPage() {
 
                 ?
 
-                "bg-amber-500"
+                "bg-amber-500 hover:bg-amber-600"
 
                 :
 
-                "bg-blue-700"
+                "bg-blue-700 hover:bg-blue-800"
 
             }
+
+            disabled:bg-slate-400
 
             `}
 
@@ -574,6 +770,44 @@ export default function MonitoringPage() {
             />
 
           </div>
+
+          {gpsSuccess && latitude !== "-" && (
+
+            <div className="mt-6">
+
+              <a
+
+                href={`https://maps.google.com/?q=${latitude},${longitude}`}
+
+                target="_blank"
+
+                rel="noopener noreferrer"
+
+                className="inline-block text-blue-700 hover:text-blue-900 underline font-bold"
+
+              >
+
+                📍 Lihat Lokasi di Google Maps
+
+              </a>
+
+            </div>
+
+          )}
+
+          {gpsSuccess && (
+
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+
+              <p className="text-emerald-700 font-bold">
+
+                ✓ Lokasi berhasil diperoleh
+
+              </p>
+
+            </div>
+
+          )}
 
         </section>
 
@@ -699,11 +933,11 @@ export default function MonitoringPage() {
 
                 ?
 
-                "MENYIMPAN..."
+                "Menyimpan Monitoring..."
 
                 :
 
-                "SIMPAN MONITORING"
+                "Simpan Monitoring"
 
             }
 
